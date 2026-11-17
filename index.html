@@ -1,0 +1,1011 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cinderloft</title>
+<meta name="description" content="Fly a house on balloons over a sea of lava. Every balloon you lose makes it heavier.">
+<meta property="og:title" content="Cinderloft">
+<meta property="og:description" content="Fly a house on balloons over a sea of lava. Every balloon you lose makes it heavier.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://campeterson41.github.io/cinderloft/">
+<meta property="og:image" content="https://campeterson41.github.io/cinderloft/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cellipse cx='16' cy='13' rx='10' ry='12' fill='%23ff4d6d'/%3E%3Cpath d='M13 27l3-4 3 4z' fill='%23c22a44'/%3E%3Cellipse cx='12' cy='9' rx='2.5' ry='4' fill='%23fff' opacity='.6'/%3E%3C/svg%3E">
+<style>
+  :root { --ink: #fff4e6; --hot: #ffb347; --font: "Avenir Next", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  html, body { margin: 0; height: 100%; background: #0d0612; overflow: hidden; }
+  #stage { position: fixed; inset: 0; overflow: hidden; background: #0d0612; font-family: var(--font); color: var(--ink); user-select: none; -webkit-user-select: none; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  .hud { position: absolute; top: 16px; right: 26px; text-align: right; pointer-events: none; font-variant-numeric: tabular-nums; text-shadow: 0 2px 0 rgba(0, 0, 0, .4); transition: opacity .25s; }
+  .hud .dist { font-size: 46px; font-weight: 800; font-style: italic; line-height: 1; letter-spacing: -.02em; }
+  .hud .dist small { font-size: 20px; font-weight: 700; margin-left: 3px; opacity: .8; }
+  .hud .best { font-size: 15px; font-weight: 600; opacity: .72; margin-top: 5px; }
+  .panel { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px; background: radial-gradient(ellipse at center, rgba(13, 6, 18, .34) 0%, rgba(13, 6, 18, .78) 100%); transition: opacity .25s; }
+  .panel[hidden] { display: none; }
+  .panel h1 { margin: 0; font-size: clamp(56px, 11vw, 132px); font-weight: 800; font-style: italic; letter-spacing: -.035em; line-height: .95; text-shadow: 0 4px 0 #c2410c, 0 10px 40px rgba(255, 120, 30, .55); }
+  .panel h2 { margin: 0; font-size: clamp(40px, 7vw, 84px); font-weight: 800; font-style: italic; letter-spacing: -.03em; line-height: 1; text-shadow: 0 3px 0 #c2410c, 0 10px 40px rgba(255, 120, 30, .5); }
+  .panel p { margin: 16px 0 0; font-size: clamp(16px, 2vw, 21px); font-weight: 500; max-width: 34em; line-height: 1.45; opacity: .92; }
+  .panel .big { font-size: clamp(22px, 3vw, 32px); font-weight: 800; font-style: italic; font-variant-numeric: tabular-nums; opacity: 1; }
+  .panel .keys { font-size: clamp(14px, 1.6vw, 17px); opacity: .7; margin-top: 12px; }
+  .panel button { margin-top: 30px; font: inherit; font-size: 21px; font-weight: 800; color: #2a0d05; background: var(--hot); border: 0; border-radius: 6px; padding: 14px 44px; cursor: pointer; box-shadow: 0 5px 0 #c2410c; }
+  .panel button:hover { background: #ffc56e; }
+  .panel button:active { transform: translateY(3px); box-shadow: 0 2px 0 #c2410c; }
+  .newbest { color: #ffd23f; }
+</style>
+</head>
+<body>
+<div id="stage">
+<canvas id="game"></canvas>
+
+<div class="hud" id="hud" style="opacity:0">
+  <div class="dist"><span id="dist">0</span><small>m</small></div>
+  <div class="best">Best <span id="best">0</span> m</div>
+</div>
+
+<div class="panel" id="title">
+  <h1>Cinderloft</h1>
+  <p>Your house is hanging from a handful of balloons over a sea of lava. Every balloon you lose makes it heavier. Lose them all and you are going in.</p>
+  <p class="keys">Hold Space, W, Up or the mouse to fire the lift jet. Down or S dives. Left and Right steer. P pauses, M mutes.</p>
+  <button id="playBtn" type="button">Play</button>
+</div>
+
+<div class="panel" id="over" hidden>
+  <h2 id="overTitle">Into the lava</h2>
+  <p class="big"><span id="overDist">0</span> m <span id="overNew" class="newbest" hidden>· new best</span></p>
+  <p id="overBest">Best 0 m</p>
+  <button id="againBtn" type="button">Fly again</button>
+  <p class="keys">or press Space</p>
+</div>
+
+<div class="panel" id="paused" hidden>
+  <h2>Paused</h2>
+  <p>Press P to keep flying.</p>
+</div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+// ---------- setup ----------
+const stage = document.getElementById('stage');
+const cv = document.getElementById('game');
+const ctx = cv.getContext('2d');
+const $ = id => document.getElementById(id);
+const TAU = Math.PI * 2;
+const FONT = '"Avenir Next", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif';
+
+// ?manual stops the real-time loop so a script can advance frames with __cinderloft.step().
+const MANUAL = /[?&]manual\b/.test(location.search);
+let W = 1280, H = 720, scale = 1, dpr = 1, lavaY = 640;
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const cw = stage.clientWidth || 1280, ch = stage.clientHeight || 720;
+  cv.width = Math.round(cw * dpr);
+  cv.height = Math.round(ch * dpr);
+  scale = Math.min(cw / 1280, ch / 720);
+  W = cw / scale;
+  H = ch / scale;
+  lavaY = H - 80;
+}
+window.addEventListener('resize', resize);
+if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
+resize();
+
+const rand = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp = (a, b, f) => a + (b - a) * f;
+const hash = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+const vnoise = x => { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return lerp(hash(i), hash(i + 1), u); };
+
+function shade(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  let r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+  const to = amt < 0 ? 0 : 255, p = Math.abs(amt);
+  r = Math.round(r + (to - r) * p); g = Math.round(g + (to - g) * p); b = Math.round(b + (to - b) * p);
+  return `rgb(${r},${g},${b})`;
+}
+
+// ---------- tuning ----------
+const MAX_B = 9, START_B = 7;
+const G = 2300, THRUST = 2000, DIVE = 1600, DRAG = 3;
+// Lift by balloon count. With none, the jet alone cannot hold the house up.
+const LIFT = [0, 480, 850, 1130, 1330, 1500, 1610, 1700, 1770, 1830];
+const SLOTS = [[0, -100], [-34, -112], [34, -112], [-17, -142], [17, -142], [-52, -138], [52, -138], [0, -172], [-35, -168]];
+const COLORS = ['#ff4d6d', '#ffd23f', '#3ddc97', '#4cc9f0', '#b388ff', '#f7f4ff'];
+const DARK = {}; COLORS.forEach(c => DARK[c] = shade(c, -0.45));
+const BR = 17; // balloon hit radius
+
+// ---------- state ----------
+let state = 'title'; // title | play | dead | over
+let paused = false, muted = false;
+let t = 0, playT = 0, speed = 320, scrollX = 0, dist = 0, bonus = 0;
+let best = 0;
+try { best = +localStorage.getItem('cinderloft.best') || 0; } catch (e) {}
+const house = { x: 0, y: 0, vx: 0, vy: 0, tilt: 0, inv: 0, dead: false };
+let balloons = [], loose = [], spires = [], geysers = [], clouds = [], bombs = [], birds = [], pickups = [], parts = [], texts = [];
+let shake = 0, hitstop = 0, flash = 0, popGuard = 0, overT = 0, colorSeq = 0;
+let nextGround = 0, capNext = 0, birdT = 0, bombT = 0, pickT = 0, emberAcc = 0, deathCause = 'lava';
+const input = { up: false, down: false, left: 0, right: 0, ptr: false };
+
+function anchor() {
+  return { x: house.x + Math.sin(house.tilt) * 50, y: house.y - Math.cos(house.tilt) * 50 };
+}
+function clusterTop(n) {
+  let m = 0;
+  for (let i = 0; i < n; i++) m = Math.max(m, -SLOTS[i][1]);
+  return n ? m + 22 : 0;
+}
+function addBalloon(fromX, fromY) {
+  if (balloons.length >= MAX_B) return false;
+  const a = anchor(), s = SLOTS[balloons.length];
+  balloons.push({
+    x: fromX === undefined ? a.x + s[0] : fromX, y: fromY === undefined ? a.y + s[1] : fromY,
+    vx: 0, vy: 0, color: COLORS[colorSeq++ % COLORS.length], ph: Math.random() * TAU
+  });
+  return true;
+}
+
+function reset() {
+  house.x = W * 0.26; house.y = H * 0.44; house.vx = 0; house.vy = 0; house.tilt = 0; house.inv = 0; house.dead = false;
+  balloons = []; loose = []; spires = []; geysers = []; clouds = []; bombs = []; birds = []; pickups = []; texts = [];
+  for (let i = 0; i < START_B; i++) addBalloon();
+  playT = 0; speed = 480; dist = 0; bonus = 0; popGuard = 0; shake = 0; flash = 0; overT = 0;
+  nextGround = scrollX + 1000; capNext = 0; birdT = 3.4; bombT = 5; pickT = 8;
+}
+
+function start() {
+  Sfx.init();
+  reset();
+  state = 'play'; paused = false;
+  $('title').hidden = true; $('over').hidden = true; $('paused').hidden = true;
+  $('hud').style.opacity = 1;
+}
+
+// ---------- audio (all synthesized, no assets) ----------
+const Sfx = (() => {
+  let ac = null, master = null, noise = null, thrustGain = null;
+  function init() {
+    if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      ac = new AC();
+      master = ac.createGain(); master.gain.value = muted ? 0 : 0.5; master.connect(ac.destination);
+      noise = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+      const d = noise.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      // lift jet loop
+      const js = ac.createBufferSource(); js.buffer = noise; js.loop = true;
+      const jf = ac.createBiquadFilter(); jf.type = 'bandpass'; jf.frequency.value = 480; jf.Q.value = 0.8;
+      thrustGain = ac.createGain(); thrustGain.gain.value = 0;
+      js.connect(jf); jf.connect(thrustGain); thrustGain.connect(master); js.start();
+      // lava rumble loop
+      const rs = ac.createBufferSource(); rs.buffer = noise; rs.loop = true;
+      const rf = ac.createBiquadFilter(); rf.type = 'lowpass'; rf.frequency.value = 110;
+      const rg = ac.createGain(); rg.gain.value = 0.55;
+      rs.connect(rf); rf.connect(rg); rg.connect(master); rs.start();
+    } catch (e) { ac = null; }
+  }
+  function burst(dur, type, f0, f1, vol, q) {
+    if (!ac) return;
+    const now = ac.currentTime, s = ac.createBufferSource(); s.buffer = noise;
+    const f = ac.createBiquadFilter(); f.type = type; f.Q.value = q || 1;
+    f.frequency.setValueAtTime(f0, now); f.frequency.exponentialRampToValueAtTime(f1, now + dur);
+    const g = ac.createGain(); g.gain.setValueAtTime(vol, now); g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    s.connect(f); f.connect(g); g.connect(master); s.start(now, Math.random()); s.stop(now + dur + 0.02);
+  }
+  function tone(type, f0, f1, dur, vol, delay) {
+    if (!ac) return;
+    const now = ac.currentTime + (delay || 0), o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.setValueAtTime(f0, now); o.frequency.exponentialRampToValueAtTime(f1, now + dur);
+    g.gain.setValueAtTime(0.0001, now); g.gain.linearRampToValueAtTime(vol, now + 0.008); g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    o.connect(g); g.connect(master); o.start(now); o.stop(now + dur + 0.02);
+  }
+  return {
+    init,
+    setMuted(m) { if (master) master.gain.value = m ? 0 : 0.5; },
+    thrust(on) { if (thrustGain) thrustGain.gain.setTargetAtTime(on ? 0.22 : 0, ac.currentTime, 0.05); },
+    pop() { burst(0.13, 'highpass', 900, 3200, 0.9); tone('square', 520, 90, 0.09, 0.25); },
+    pickup() { tone('triangle', 520, 560, 0.1, 0.3); tone('triangle', 780, 840, 0.16, 0.3, 0.08); },
+    near() { tone('sine', 1300, 1700, 0.07, 0.14); },
+    whoosh() { burst(0.6, 'bandpass', 250, 1500, 0.55, 1.2); },
+    thump() { tone('sine', 150, 55, 0.2, 0.4); },
+    boom() { tone('sine', 140, 28, 0.9, 0.9); burst(0.9, 'lowpass', 1800, 90, 0.9); }
+  };
+})();
+
+// ---------- particles ----------
+function spark(x, y, vx, vy, life, size, color, grav, add) {
+  if (parts.length > 800) return;
+  parts.push({ x, y, vx, vy, life, max: life, size, color, grav: grav || 0, add: add !== false, ring: false });
+}
+function ring(x, y, color, size) {
+  parts.push({ x, y, vx: 0, vy: 0, life: 0.3, max: 0.3, size: size || 14, color, grav: 0, add: true, ring: true });
+}
+function popBurst(x, y, color) {
+  for (let i = 0; i < 16; i++) {
+    const a = rand(0, TAU), v = rand(120, 460);
+    spark(x, y, Math.cos(a) * v, Math.sin(a) * v, rand(0.25, 0.55), rand(2.2, 4.6), color, 700, false);
+  }
+  for (let i = 0; i < 6; i++) {
+    const a = rand(0, TAU), v = rand(60, 260);
+    spark(x, y, Math.cos(a) * v, Math.sin(a) * v, rand(0.15, 0.3), rand(1.5, 3), '#ffffff');
+  }
+  ring(x, y, '#ffffff', 16);
+}
+function fireBurst(x, y, n, power) {
+  for (let i = 0; i < n; i++) {
+    const a = rand(-Math.PI, 0), v = rand(80, power);
+    spark(x + rand(-14, 14), y, Math.cos(a) * v, Math.sin(a) * v, rand(0.4, 1.1), rand(2.5, 7), Math.random() < 0.5 ? '#ffd866' : '#ff6a1f', 900);
+  }
+}
+function addText(x, y, text, color, size) {
+  texts.push({ x, y, text, color: color || '#fff4e6', size: size || 20, life: 1.1, max: 1.1 });
+}
+
+// ---------- gameplay events ----------
+function popBalloon(i) {
+  const b = balloons[i];
+  balloons.splice(i, 1);
+  popBurst(b.x, b.y, b.color);
+  Sfx.pop();
+  shake = Math.max(shake, 10); hitstop = 0.06; popGuard = 0.5; flash = Math.max(flash, 0.22);
+  if (balloons.length === 0) { addText(house.x, house.y - 80, 'No balloons! Grab one!', '#ffd23f', 26); pickT = Math.min(pickT, 0.6); }
+  else if (balloons.length <= 2) pickT = Math.min(pickT, 1.8);
+}
+
+function die(cause) {
+  if (state !== 'play') return;
+  state = 'dead'; overT = 0; deathCause = cause; house.dead = true;
+  Sfx.boom(); Sfx.thrust(false);
+  shake = 26; flash = 0.6; hitstop = 0.12;
+  fireBurst(house.x, Math.min(house.y + 10, lavaY), 90, 780);
+  for (let i = 0; i < 14; i++) spark(house.x + rand(-30, 30), house.y + rand(-30, 20), rand(-160, 60), rand(-220, -40), rand(0.8, 1.6), rand(10, 22), 'rgba(40,24,40,0.55)', -60, false);
+  ring(house.x, house.y, '#ffd866', 30);
+  for (const b of balloons) loose.push({ x: b.x, y: b.y, vx: rand(-60, 40), vy: rand(-140, -60), color: b.color, ph: b.ph });
+  balloons = [];
+  const score = Math.floor(dist) + bonus;
+  const isNew = score > best;
+  if (isNew) { best = score; try { localStorage.setItem('cinderloft.best', String(best)); } catch (e) {} }
+  $('overTitle').textContent = cause === 'rock' ? 'Smashed on the rocks' : cause === 'geyser' ? 'Caught by a geyser' : 'Into the lava';
+  $('overDist').textContent = score.toLocaleString('en-US');
+  $('overNew').hidden = !isNew;
+  $('overBest').textContent = 'Best ' + best.toLocaleString('en-US') + ' m';
+}
+
+function spawnSpire(x, h) {
+  h = Math.min(h, 300);
+  const seed = Math.random() * 1000;
+  spires.push({ x, h, w: 58 + h * 0.3, tx: x + (hash(seed) - 0.5) * 26, seed, passed: false });
+}
+function spawnGeyser(x, h) {
+  geysers.push({ x, h: Math.min(h, 310), st: 0, p: 0, seed: Math.random() * 1000, passed: false });
+}
+function spawnGround(d) {
+  const x = W + 150, r = Math.random();
+  let maxH = 190 + 110 * d;
+  if (capNext) { maxH = Math.min(maxH, capNext); capNext = 0; }
+  let gap = lerp(650, 350, d) * rand(0.8, 1.3);
+  if (r < 0.36) {
+    spawnSpire(x, rand(110, maxH));
+  } else if (r < 0.54) {
+    const h = rand(100, maxH * 0.9);
+    spawnSpire(x, h); spawnSpire(x + rand(95, 150), h * rand(0.6, 1.1));
+    gap += 120;
+  } else if (r < 0.8 || playT < 6) {
+    spawnGeyser(x, rand(170, maxH + 10));
+    if (d > 0.4 && Math.random() < 0.35) { spawnSpire(x + rand(180, 250), rand(100, maxH * 0.8)); gap += 200; }
+  } else {
+    // Ash cloud hanging from the top. Dip under it.
+    const w = rand(230, 370), room = rand(455, 540);
+    clouds.push({ x: x + 170 + w / 2, w, bottom: lavaY - room, seed: Math.random() * 1000 });
+    if (d > 0.3 && Math.random() < 0.5) spawnSpire(x + 170 + w / 2 + rand(-40, 40), rand(70, 110));
+    gap += w + 330; capNext = 190;
+  }
+  nextGround = scrollX + gap;
+}
+function spawnBird(d) {
+  const v = 540 + 300 * d + rand(-40, 60);
+  const cy = house.y - 50 - clusterTop(balloons.length) * 0.55;
+  birds.push({ x: W + 50 + v * 0.55, by: clamp(cy + rand(-120, 120), 50, lavaY - 130), y: 0, v, ph: rand(0, TAU), minD: 1e9, scored: false });
+}
+function spawnBomb() {
+  const gb = 1150;
+  const apex = clamp(house.y - 110 + rand(-170, 150), 60, lavaY - 160);
+  const vy = -Math.sqrt(2 * gb * (lavaY - apex)), ta = -vy / gb, vx = -speed * 0.55;
+  const x0 = house.x + rand(-30, 190) - vx * ta;
+  bombs.push({ x: x0, y: lavaY + 6, vx, vy, gb, r: 13, minD: 1e9, scored: false, seed: Math.random() * 10 });
+  if (x0 < W + 60) { fireBurst(x0, lavaY, 12, 320); Sfx.thump(); }
+}
+function spawnPickup() {
+  const n = balloons.length;
+  const y = n === 0 ? clamp(house.y + rand(20, 110), 110, lavaY - 110) : rand(110, lavaY - 200);
+  pickups.push({ x: W + 50, by: y, y, ph: rand(0, TAU), color: COLORS[(colorSeq + pickups.length) % COLORS.length] });
+}
+function pickDelay(n) {
+  return n >= 7 ? rand(9, 13) : n >= 4 ? rand(5, 8) : n >= 2 ? rand(3, 4.5) : rand(1.5, 2.3);
+}
+
+function circRect(cx, cy, r, x1, y1, x2, y2) {
+  const dx = cx - clamp(cx, x1, x2), dy = cy - clamp(cy, y1, y2);
+  return dx * dx + dy * dy < r * r;
+}
+function spireEdges(s, y) {
+  const top = lavaY - s.h, f = clamp((y - top) / s.h, 0, 1);
+  return [lerp(s.tx, s.x - s.w / 2, f), lerp(s.tx, s.x + s.w / 2, f)];
+}
+function geyserHeight(g) {
+  if (g.st === 0) return 0;
+  const e = clamp(g.p / 0.2, 0, 1);
+  return g.h * (1 - (1 - e) * (1 - e));
+}
+
+// ---------- update ----------
+function update(dt) {
+  t += dt;
+  const thrusting = state === 'play' && (input.up || input.ptr);
+
+  if (state === 'title') {
+    speed = 320;
+    house.x = W * 0.15;
+    house.y = H * 0.36 + Math.sin(t * 1.4) * 22;
+    house.vy = Math.cos(t * 1.4) * 30; house.tilt = Math.sin(t * 1.4) * 0.03; house.dead = false;
+    if (balloons.length === 0) for (let i = 0; i < START_B; i++) addBalloon();
+  }
+
+  if (state === 'play') {
+    playT += dt;
+    const d = clamp(playT / 110, 0, 1);
+    speed = 480 + 430 * d + clamp((playT - 110) * 0.8, 0, 130);
+    dist += speed * dt / 40;
+
+    // house physics
+    const n = balloons.length;
+    const ay = G - LIFT[n] - (thrusting ? THRUST : 0) + (input.down ? DIVE : 0);
+    house.vy += ay * dt;
+    house.vy *= Math.exp(-DRAG * dt);
+    house.y += house.vy * dt;
+    const minY = 62 + clusterTop(n);
+    if (house.y < minY) { house.y = minY; if (house.vy < 0) house.vy = 0; }
+    const tvx = (input.right - input.left) * 420;
+    house.vx += (tvx - house.vx) * Math.min(1, dt * 9);
+    house.x = clamp(house.x + house.vx * dt, W * 0.07, W * 0.62);
+    const tt = clamp(house.vy / 3000, -0.16, 0.2) + house.vx / 2600;
+    house.tilt += (tt - house.tilt) * Math.min(1, dt * 8);
+    if (house.inv > 0) house.inv -= dt;
+    if (popGuard > 0) popGuard -= dt;
+    Sfx.thrust(thrusting);
+    if (thrusting && Math.random() < dt * 60) spark(house.x + rand(-5, 5), house.y + 44, rand(-40, 40) - speed * 0.2, rand(160, 320), rand(0.12, 0.26), rand(2, 4), '#8fd8ff');
+
+    // spawns
+    if (scrollX >= nextGround) spawnGround(d);
+    birdT -= dt; if (birdT <= 0) { spawnBird(d); birdT = lerp(3.0, 0.95, d) * rand(0.7, 1.3); }
+    bombT -= dt; if (bombT <= 0) { spawnBomb(); bombT = lerp(3.8, 1.15, d) * rand(0.7, 1.3); }
+    pickT -= dt; if (pickT <= 0) { spawnPickup(); pickT = pickDelay(n); }
+  }
+
+  if (state === 'dead' || state === 'over') {
+    speed += (150 - speed) * Math.min(1, dt * 2.2);
+    if (state === 'dead') {
+      overT += dt;
+      if (overT > 1.05) { state = 'over'; overT = 0; $('over').hidden = false; $('hud').style.opacity = 0; }
+    } else overT += dt;
+  }
+
+  scrollX += speed * dt;
+
+  // balloons follow the roof on springs
+  const a = anchor();
+  for (let i = 0; i < balloons.length; i++) {
+    const b = balloons[i], s = SLOTS[i];
+    const tx = a.x + s[0] + Math.sin(t * 1.7 + b.ph) * 4 - house.vx * 0.03 - (state === 'play' ? (speed - 480) * 0.02 : 0);
+    const ty = a.y + s[1] + Math.cos(t * 2.1 + b.ph) * 3;
+    b.vx += ((tx - b.x) * 210 - b.vx * 19) * dt;
+    b.vy += ((ty - b.y) * 210 - b.vy * 19) * dt;
+    b.x += b.vx * dt; b.y += b.vy * dt;
+  }
+  for (const b of loose) { b.vy -= 70 * dt; b.x += (b.vx - speed * 0.25) * dt; b.y += b.vy * dt; }
+  loose = loose.filter(b => b.y > -80);
+
+  // world objects
+  for (const s of spires) s.x -= speed * dt, s.tx -= speed * dt;
+  for (const c of clouds) c.x -= speed * dt;
+  for (const g of geysers) {
+    g.x -= speed * dt;
+    if (g.st === 0) {
+      if (Math.random() < dt * 30 && g.x < W + 40) spark(g.x + rand(-14, 14), lavaY - 12, rand(-50, 50) - speed * 0.3, rand(-420, -160), rand(0.2, 0.5), rand(1.5, 3), '#ffd866', 500);
+      if (state === 'play' && g.x < W + 20 && (g.x - house.x) / speed < 0.7) { g.st = 1; g.p = 0; Sfx.whoosh(); shake = Math.max(shake, 5); }
+    } else {
+      g.p += dt;
+      const top = lavaY - geyserHeight(g);
+      if (Math.random() < dt * 90) spark(g.x + rand(-16, 16), top + rand(0, 20), rand(-200, 200) - speed * 0.3, rand(-380, -60), rand(0.3, 0.7), rand(2, 5), Math.random() < 0.5 ? '#ffe9a8' : '#ff7a1f', 1100);
+    }
+  }
+  for (const p of pickups) { p.x -= speed * 0.8 * dt; p.y = p.by + Math.sin(t * 2.2 + p.ph) * 14; }
+  for (const b of birds) {
+    b.x -= b.v * dt; b.y = b.by + Math.sin(t * 5 + b.ph) * 16;
+    if (b.x < W + 20 && Math.random() < dt * 40) spark(b.x + 12, b.y + rand(-4, 4), rand(20, 90), rand(-30, 30), rand(0.15, 0.35), rand(1.5, 3.5), '#ff8a2a');
+  }
+  for (const b of bombs) {
+    b.vy += b.gb * dt; b.x += b.vx * dt; b.y += b.vy * dt;
+    if (Math.random() < dt * 70) spark(b.x + rand(-5, 5), b.y + rand(-5, 5), rand(-30, 30), rand(-30, 30), rand(0.2, 0.45), rand(3, 6), Math.random() < 0.5 ? '#ffb347' : '#ff5a1f');
+    if (b.vy > 0 && b.y > lavaY && !b.gone) { b.gone = true; if (b.x > -40 && b.x < W + 40) fireBurst(b.x, lavaY, 8, 260); }
+  }
+  spires = spires.filter(s => s.x > -220);
+  clouds = clouds.filter(c => c.x > -c.w);
+  geysers = geysers.filter(g => g.x > -120);
+  pickups = pickups.filter(p => p.x > -60 && !p.got);
+  birds = birds.filter(b => b.x > -60 && !b.gone);
+  bombs = bombs.filter(b => !b.gone && b.x > -80);
+
+  if (state === 'play') collide();
+
+  // ambient embers off the lava
+  emberAcc += dt * 34;
+  while (emberAcc > 1) {
+    emberAcc -= 1;
+    spark(rand(0, W + 200), lavaY + rand(-4, 6), -speed * rand(0.5, 0.8), rand(-170, -40), rand(1.2, 2.8), rand(1, 2.6), Math.random() < 0.6 ? '#ff8a2a' : '#ffd866', -20);
+  }
+  for (const p of parts) {
+    p.life -= dt; p.vy += p.grav * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+  }
+  parts = parts.filter(p => p.life > 0);
+  for (const x of texts) { x.life -= dt; x.y -= 46 * dt; x.x -= speed * 0.15 * dt; }
+  texts = texts.filter(x => x.life > 0);
+
+  if (shake > 0) shake = Math.max(0, shake - dt * 42);
+  if (flash > 0) flash = Math.max(0, flash - dt * 1.8);
+}
+
+function collide() {
+  const hl = house.x - 30, hr = house.x + 30, ht = house.y - 40, hb = house.y + 24;
+
+  // things that end the run
+  if (hb > lavaY - 3) return die('lava');
+  for (const s of spires) {
+    const top = lavaY - s.h;
+    if (hb > top + 6) {
+      const e = spireEdges(s, hb);
+      if (hr > e[0] + 5 && hl < e[1] - 5) return die('rock');
+    }
+    if (!s.passed && s.tx < house.x - 30) {
+      s.passed = true;
+      const gap = top - hb;
+      if (gap > 0 && gap < 42) nearMiss();
+    }
+  }
+  for (const g of geysers) {
+    const cur = geyserHeight(g);
+    if (cur > 24 && hb > lavaY - cur + 10 && hr > g.x - 18 && hl < g.x + 18) return die('geyser');
+    if (!g.passed && g.x < house.x - 34) {
+      g.passed = true;
+      const gap = lavaY - cur - hb;
+      if (g.st === 1 && gap > 0 && gap < 42) nearMiss();
+    }
+  }
+
+  // track how close the flying things get, for close-call bonuses
+  for (const list of [birds, bombs]) for (const o of list) {
+    const r = o.r || 12;
+    let m = Math.hypot(o.x - house.x, o.y - (house.y - 8)) - r - 34;
+    for (const b of balloons) m = Math.min(m, Math.hypot(o.x - b.x, o.y - b.y) - r - BR);
+    if (m < o.minD) o.minD = m;
+    if (!o.scored && o.x < house.x - 110) { o.scored = true; if (!o.hit && o.minD < 22) nearMiss(); }
+  }
+
+  if (popGuard > 0) return;
+
+  // things that pop balloons
+  for (let i = balloons.length - 1; i >= 0; i--) {
+    const b = balloons[i];
+    for (const s of spires) {
+      const y = b.y + 12;
+      if (y > lavaY - s.h) { const e = spireEdges(s, y); if (b.x > e[0] - 11 && b.x < e[1] + 11) return popBalloon(i); }
+    }
+    for (const g of geysers) {
+      const cur = geyserHeight(g);
+      if (cur > 24 && b.y + 14 > lavaY - cur + 8 && Math.abs(b.x - g.x) < 33) return popBalloon(i);
+    }
+    for (const c of clouds) {
+      const dx = (b.x - c.x) / (c.w / 2);
+      if (Math.abs(dx) < 0.95 && b.y - 15 < c.bottom - 8 - 24 * dx * dx) { ring(b.x, b.y - 14, '#ff8a2a', 10); return popBalloon(i); }
+    }
+    for (const o of birds) {
+      if (Math.hypot(o.x - b.x, o.y - b.y) < BR + 11) { o.gone = true; o.hit = true; fireBurst(o.x, o.y, 10, 240); return popBalloon(i); }
+    }
+    for (const o of bombs) {
+      if (Math.hypot(o.x - b.x, o.y - b.y) < BR + o.r - 2) { o.gone = true; o.hit = true; fireBurst(o.x, o.y, 14, 300); return popBalloon(i); }
+    }
+  }
+
+  // flying things that hit the house knock a balloon loose
+  if (house.inv <= 0) {
+    for (const list of [birds, bombs]) for (const o of list) {
+      if (!o.gone && circRect(o.x, o.y, (o.r || 12) - 2, hl, ht, hr, hb)) {
+        o.gone = true; o.hit = true; fireBurst(o.x, o.y, 14, 300);
+        house.inv = 0.8; house.vy += 260; shake = Math.max(shake, 12);
+        if (balloons.length) popBalloon(0); else Sfx.thump();
+        return;
+      }
+    }
+  }
+
+  // spare balloons
+  for (const p of pickups) {
+    let hit = Math.hypot(p.x - house.x, p.y - (house.y - 10)) < 52;
+    if (!hit) for (const b of balloons) if (Math.hypot(p.x - b.x, p.y - b.y) < 40) { hit = true; break; }
+    if (hit) {
+      p.got = true; Sfx.pickup(); ring(p.x, p.y, p.color, 18);
+      if (addBalloon(p.x, p.y)) { balloons[balloons.length - 1].color = p.color; addText(p.x, p.y - 30, '+1 balloon', p.color, 20); }
+      else { bonus += 150; addText(p.x, p.y - 30, '+150', '#ffd23f', 22); }
+    }
+  }
+}
+function nearMiss() {
+  bonus += 25; Sfx.near();
+  addText(house.x + 40, house.y - 60, 'Close call +25', '#ffd23f', 18);
+}
+
+// ---------- drawing ----------
+function drawSky() {
+  const g = ctx.createLinearGradient(0, 0, 0, lavaY);
+  g.addColorStop(0, '#130a1d'); g.addColorStop(0.45, '#33122e'); g.addColorStop(0.78, '#792327'); g.addColorStop(1, '#e0632a');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // stars
+  ctx.fillStyle = '#ffe9d6';
+  for (let i = 0; i < 70; i++) {
+    const span = W + 200;
+    let x = (hash(i * 3.1) * span - scrollX * 0.012) % span; if (x < 0) x += span;
+    const y = hash(i * 7.7) * lavaY * 0.52;
+    ctx.globalAlpha = (0.18 + 0.4 * hash(i * 1.3)) * (0.7 + 0.3 * Math.sin(t * 2 + i));
+    ctx.fillRect(x - 100, y, 2, 2);
+  }
+  ctx.globalAlpha = 1;
+  // hazy moon
+  const mx = W * 0.74, my = lavaY * 0.26;
+  const mg = ctx.createRadialGradient(mx, my, 10, mx, my, 190);
+  mg.addColorStop(0, 'rgba(255,190,150,0.26)'); mg.addColorStop(1, 'rgba(255,190,150,0)');
+  ctx.fillStyle = mg; ctx.fillRect(mx - 190, my - 190, 380, 380);
+  ctx.fillStyle = 'rgba(255,214,186,0.5)'; ctx.beginPath(); ctx.arc(mx, my, 46, 0, TAU); ctx.fill();
+}
+
+function coneAt(cell) {
+  return { cx: cell * 1500 + 400 + hash(cell) * 700, ch: 170 + hash(cell + 0.5) * 120 };
+}
+function farH(wx) {
+  let h = 55 + 70 * vnoise(wx * 0.004) + 24 * vnoise(wx * 0.013 + 7);
+  const cell = Math.floor(wx / 1500);
+  for (let c = cell - 1; c <= cell + 1; c++) {
+    const k = coneAt(c), d = Math.abs(wx - k.cx);
+    let v = k.ch - d * 0.62;
+    if (d < 28) v -= (28 - d) * 0.7;
+    if (v > h) h = v;
+  }
+  return h;
+}
+function drawFar() {
+  const off = scrollX * 0.1, base = lavaY - 24;
+  // crater glows
+  ctx.globalCompositeOperation = 'lighter';
+  const c0 = Math.floor(off / 1500) - 1, c1 = Math.floor((off + W) / 1500) + 1;
+  for (let c = c0; c <= c1; c++) {
+    const k = coneAt(c), gx = k.cx - off, gy = base - k.ch + 14;
+    if (gx < -150 || gx > W + 150) continue;
+    const gg = ctx.createRadialGradient(gx, gy, 4, gx, gy, 120);
+    gg.addColorStop(0, 'rgba(255,140,50,0.75)'); gg.addColorStop(1, 'rgba(255,90,30,0)');
+    ctx.fillStyle = gg; ctx.fillRect(gx - 120, gy - 120, 240, 240);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = '#3a1430';
+  ctx.beginPath(); ctx.moveTo(0, H);
+  for (let x = 0; x <= W + 20; x += 20) ctx.lineTo(x, base - farH(x + off));
+  ctx.lineTo(W + 20, H); ctx.fill();
+}
+function drawRidge() {
+  const off = scrollX * 0.4;
+  ctx.fillStyle = '#1b0b19';
+  ctx.beginPath(); ctx.moveTo(0, H);
+  for (let x = 0; x <= W + 14; x += 14) {
+    const wx = x + off;
+    ctx.lineTo(x, lavaY - 6 - (24 + 62 * vnoise(wx * 0.006) + 26 * vnoise(wx * 0.021 + 3) + 9 * vnoise(wx * 0.07)));
+  }
+  ctx.lineTo(W + 14, H); ctx.fill();
+}
+
+function lavaSurf(x) {
+  return lavaY + 5 * Math.sin((x + scrollX) * 0.011 + t * 1.6) + 3 * Math.sin((x + scrollX) * 0.027 - t * 2.3);
+}
+function drawLavaGlow() {
+  ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createLinearGradient(0, lavaY - 250, 0, lavaY);
+  g.addColorStop(0, 'rgba(255,110,30,0)'); g.addColorStop(1, 'rgba(255,110,30,0.36)');
+  ctx.fillStyle = g; ctx.fillRect(0, lavaY - 250, W, 266);
+  ctx.globalCompositeOperation = 'source-over';
+}
+function drawLava() {
+  const g = ctx.createLinearGradient(0, lavaY - 8, 0, H);
+  g.addColorStop(0, '#ffd866'); g.addColorStop(0.22, '#ff7a1f'); g.addColorStop(0.7, '#d8320f'); g.addColorStop(1, '#8f1608');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.moveTo(0, H);
+  for (let x = 0; x <= W + 16; x += 16) ctx.lineTo(x, lavaSurf(x));
+  ctx.lineTo(W + 16, H); ctx.fill();
+  ctx.strokeStyle = '#fff0b8'; ctx.lineWidth = 3;
+  ctx.beginPath();
+  for (let x = 0; x <= W + 16; x += 16) { const y = lavaSurf(x); if (x) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
+  ctx.stroke();
+  // cooled crust drifting past
+  ctx.fillStyle = 'rgba(70,14,10,0.5)';
+  const c0 = Math.floor(scrollX / 170) - 1, c1 = Math.floor((scrollX + W) / 170) + 1;
+  for (let c = c0; c <= c1; c++) {
+    const x = c * 170 + hash(c * 1.7) * 110 - scrollX, y = lavaY + 24 + hash(c * 2.9) * 38;
+    ctx.beginPath(); ctx.ellipse(x, y, 18 + hash(c * 4.1) * 34, 3.5 + hash(c * 5.3) * 4, 0, 0, TAU); ctx.fill();
+  }
+}
+
+function drawSpires() {
+  for (const s of spires) {
+    const top = lavaY - s.h, by = lavaY + 24, L = s.x - s.w / 2, R = s.x + s.w / 2;
+    const j1 = (hash(s.seed + 1) - 0.5) * 8, j2 = (hash(s.seed + 2) - 0.5) * 8;
+    const lsx = lerp(s.tx, L, 0.55) + j1, lsy = top + s.h * 0.55;
+    const rsx = lerp(s.tx, R, 0.45) + j2, rsy = top + s.h * 0.45;
+    ctx.beginPath(); ctx.moveTo(L, by); ctx.lineTo(lsx, lsy); ctx.lineTo(s.tx, top); ctx.lineTo(rsx, rsy); ctx.lineTo(R, by); ctx.closePath();
+    ctx.fillStyle = '#120a16'; ctx.fill();
+    // lit facet
+    ctx.beginPath(); ctx.moveTo(L, by); ctx.lineTo(lsx, lsy); ctx.lineTo(s.tx, top); ctx.lineTo(lerp(s.tx, s.x, 0.6) - s.w * 0.08, by); ctx.closePath();
+    ctx.fillStyle = '#34203b'; ctx.fill();
+    // lava light climbing the base
+    ctx.beginPath(); ctx.moveTo(L, by); ctx.lineTo(lsx, lsy); ctx.lineTo(s.tx, top); ctx.lineTo(rsx, rsy); ctx.lineTo(R, by); ctx.closePath();
+    const g = ctx.createLinearGradient(0, top + s.h * 0.35, 0, lavaY);
+    g.addColorStop(0, 'rgba(255,110,30,0)'); g.addColorStop(1, 'rgba(255,120,40,0.34)');
+    ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,186,110,0.85)'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(L, by); ctx.lineTo(lsx, lsy); ctx.lineTo(s.tx, top); ctx.lineTo(rsx, rsy); ctx.lineTo(R, by); ctx.stroke();
+  }
+}
+
+function drawGeysers() {
+  for (const g of geysers) {
+    const cur = geyserHeight(g);
+    if (g.st === 0) {
+      // warning: a faint column showing how high it will go
+      const a = 0.1 + 0.07 * Math.sin(t * 22 + g.seed);
+      ctx.fillStyle = `rgba(255,170,70,${a})`;
+      ctx.fillRect(g.x - 20, lavaY - g.h, 40, g.h);
+      ctx.fillStyle = `rgba(255,220,140,${a * 3.2})`;
+      ctx.fillRect(g.x - 26, lavaY - g.h - 3, 52, 3);
+    } else {
+      const top = lavaY - cur;
+      const grad = ctx.createLinearGradient(g.x - 26, 0, g.x + 26, 0);
+      grad.addColorStop(0, '#ff5a1f'); grad.addColorStop(0.5, '#fff1b0'); grad.addColorStop(1, '#ff5a1f');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.moveTo(g.x - 28, lavaY + 10);
+      for (let y = lavaY; y > top; y -= 14) ctx.lineTo(g.x - 21 + Math.sin(y * 0.07 + t * 20) * 4, y);
+      ctx.lineTo(g.x - 14, top);
+      ctx.quadraticCurveTo(g.x, top - 26, g.x + 14, top);
+      for (let y = top; y < lavaY; y += 14) ctx.lineTo(g.x + 21 + Math.sin(y * 0.07 + t * 20 + 2) * 4, y);
+      ctx.lineTo(g.x + 28, lavaY + 10); ctx.closePath(); ctx.fill();
+      ctx.globalCompositeOperation = 'lighter';
+      const hg = ctx.createRadialGradient(g.x, top, 4, g.x, top, 70);
+      hg.addColorStop(0, 'rgba(255,220,120,0.8)'); hg.addColorStop(1, 'rgba(255,120,30,0)');
+      ctx.fillStyle = hg; ctx.fillRect(g.x - 70, top - 70, 140, 140);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    // vent mound
+    ctx.fillStyle = '#1a0e1d';
+    ctx.beginPath(); ctx.moveTo(g.x - 44, lavaY + 16); ctx.quadraticCurveTo(g.x - 24, lavaY - 20, g.x - 12, lavaY - 16);
+    ctx.lineTo(g.x + 12, lavaY - 16); ctx.quadraticCurveTo(g.x + 24, lavaY - 20, g.x + 44, lavaY + 16); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ffd866'; ctx.fillRect(g.x - 12, lavaY - 17, 24, 3);
+  }
+}
+
+function drawClouds() {
+  for (const c of clouds) {
+    const L = c.x - c.w / 2, k = Math.max(4, Math.round(c.w / 52));
+    ctx.fillStyle = '#2c1a30';
+    ctx.beginPath(); ctx.rect(L + 10, -20, c.w - 20, c.bottom - 30 + 20);
+    for (let i = 0; i <= k; i++) {
+      const f = i / k, dx = f * 2 - 1;
+      const cx = L + f * c.w, r = 36 + hash(c.seed + i) * 14;
+      const cy = c.bottom - r - 24 * dx * dx + 4;
+      ctx.moveTo(cx + r, cy); ctx.arc(cx, cy, r, 0, TAU);
+      ctx.moveTo(cx + r * 1.2, cy - 60); ctx.arc(cx + 10, cy - 60, r * 1.2, 0, TAU);
+    }
+    ctx.fill();
+    // ember-lit underside
+    ctx.save(); ctx.clip();
+    const g = ctx.createLinearGradient(0, c.bottom - 52, 0, c.bottom + 6);
+    g.addColorStop(0, 'rgba(255,90,40,0)'); g.addColorStop(1, 'rgba(255,110,45,0.8)');
+    ctx.fillStyle = g; ctx.fillRect(L - 60, c.bottom - 52, c.w + 120, 62);
+    ctx.restore();
+    // crackle
+    ctx.strokeStyle = '#ffd866'; ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+      const ph = Math.floor(t * 14 + i * 3.3 + c.seed);
+      if (hash(ph * 1.7 + i) < 0.45) continue;
+      const dx = hash(ph + i * 9.1) * 1.6 - 0.8;
+      let x = c.x + dx * c.w / 2, y = c.bottom - 30 - 24 * dx * dx;
+      ctx.beginPath(); ctx.moveTo(x, y);
+      for (let j = 1; j <= 3; j++) { x += (hash(ph * 3.3 + j + i) - 0.5) * 22; y += 9; ctx.lineTo(x, y); }
+      ctx.stroke();
+    }
+  }
+}
+
+function drawBalloon(x, y, color, s) {
+  ctx.save(); ctx.translate(x, y); if (s) ctx.scale(s, s);
+  const g = ctx.createRadialGradient(-6, -8, 2, 0, 0, 25);
+  g.addColorStop(0, '#ffffff'); g.addColorStop(0.2, color); g.addColorStop(1, DARK[color] || color);
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.ellipse(0, 0, 17, 21, 0, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-4, 25); ctx.lineTo(0, 19); ctx.lineTo(4, 25); ctx.closePath(); ctx.fillStyle = DARK[color] || color; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,150,60,0.55)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.ellipse(0, 0, 16, 20, 0, 0.2 * Math.PI, 0.8 * Math.PI); ctx.stroke();
+  ctx.restore();
+}
+function drawStrings() {
+  const a = anchor();
+  ctx.strokeStyle = 'rgba(255,244,230,0.6)'; ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  for (const b of balloons) {
+    ctx.moveTo(a.x, a.y);
+    ctx.quadraticCurveTo((a.x + b.x) / 2 + (b.x - a.x) * 0.15, (a.y + b.y + 25) / 2 + 10, b.x, b.y + 25);
+  }
+  ctx.stroke();
+}
+
+function drawHouse(thrusting) {
+  if (house.inv > 0 && Math.floor(t * 20) % 2) return;
+  ctx.save(); ctx.translate(house.x, house.y); ctx.rotate(house.tilt);
+  // lift jet
+  if (thrusting) {
+    const len = 34 + Math.random() * 18;
+    const fg = ctx.createLinearGradient(0, 28, 0, 28 + len);
+    fg.addColorStop(0, '#ffffff'); fg.addColorStop(0.35, '#8fd8ff'); fg.addColorStop(1, 'rgba(60,140,255,0)');
+    ctx.fillStyle = fg;
+    ctx.beginPath(); ctx.moveTo(-9, 28); ctx.quadraticCurveTo(0, 28 + len * 1.5, 9, 28); ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = '#3b3340'; ctx.fillRect(-10, 24, 20, 6);
+  // chimney
+  ctx.fillStyle = '#9a5b45'; ctx.fillRect(15, -50, 11, 26);
+  ctx.fillStyle = '#6b3d30'; ctx.fillRect(13, -54, 15, 5);
+  // walls
+  ctx.fillStyle = '#f4e7cf'; ctx.fillRect(-32, -20, 64, 44);
+  ctx.fillStyle = '#dcc7a6'; ctx.fillRect(16, -20, 16, 44);
+  const ug = ctx.createLinearGradient(0, 0, 0, 24);
+  ug.addColorStop(0, 'rgba(255,120,40,0)'); ug.addColorStop(1, 'rgba(255,120,40,0.45)');
+  ctx.fillStyle = ug; ctx.fillRect(-32, 0, 64, 24);
+  ctx.fillStyle = '#6d4a3a'; ctx.fillRect(-36, 20, 72, 6);
+  // roof
+  ctx.fillStyle = '#237684';
+  ctx.beginPath(); ctx.moveTo(-43, -17); ctx.lineTo(0, -52); ctx.lineTo(43, -17); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#35a3b3';
+  ctx.beginPath(); ctx.moveTo(-43, -17); ctx.lineTo(0, -52); ctx.lineTo(6, -17); ctx.closePath(); ctx.fill();
+  // attic window
+  ctx.fillStyle = '#ffd98a'; ctx.beginPath(); ctx.arc(0, -29, 5, 0, TAU); ctx.fill();
+  // door
+  ctx.fillStyle = '#8b4a2b'; ctx.fillRect(-7, -1, 14, 21);
+  ctx.fillStyle = '#ffd98a'; ctx.fillRect(3, 9, 2, 2);
+  // windows
+  for (const wx of [-27, 13]) {
+    ctx.fillStyle = '#ffd98a'; ctx.fillRect(wx, -11, 14, 14);
+    ctx.fillStyle = '#6d4a3a'; ctx.fillRect(wx + 6, -11, 2, 14); ctx.fillRect(wx, -5, 14, 2);
+  }
+  ctx.restore();
+}
+
+function drawBirds() {
+  for (const b of birds) {
+    if (b.x > W + 20) continue;
+    const flap = Math.sin(t * 24 + b.ph);
+    ctx.save(); ctx.translate(b.x, b.y);
+    ctx.globalCompositeOperation = 'lighter';
+    const gl = ctx.createRadialGradient(0, 0, 2, 0, 0, 34);
+    gl.addColorStop(0, 'rgba(255,140,40,0.55)'); gl.addColorStop(1, 'rgba(255,90,30,0)');
+    ctx.fillStyle = gl; ctx.fillRect(-34, -34, 68, 68);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#ff6a1f';
+    ctx.beginPath(); ctx.moveTo(-2, 0); ctx.lineTo(12, -20 * flap - 4); ctx.lineTo(16, 0); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ffb347';
+    ctx.beginPath(); ctx.ellipse(0, 0, 15, 8, 0, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(12, -4); ctx.lineTo(30, -1 + flap * 3); ctx.lineTo(12, 5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#fff1b0';
+    ctx.beginPath(); ctx.moveTo(-13, -3); ctx.lineTo(-26, 1); ctx.lineTo(-13, 4); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#2a0d05'; ctx.beginPath(); ctx.arc(-8, -2, 2, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
+}
+function drawBombs() {
+  for (const b of bombs) {
+    ctx.globalCompositeOperation = 'lighter';
+    const gl = ctx.createRadialGradient(b.x, b.y, 2, b.x, b.y, 40);
+    gl.addColorStop(0, 'rgba(255,160,50,0.6)'); gl.addColorStop(1, 'rgba(255,90,30,0)');
+    ctx.fillStyle = gl; ctx.fillRect(b.x - 40, b.y - 40, 80, 80);
+    ctx.globalCompositeOperation = 'source-over';
+    const g = ctx.createRadialGradient(b.x - 3, b.y - 3, 1, b.x, b.y, b.r);
+    g.addColorStop(0, '#fff3b0'); g.addColorStop(0.5, '#ff8a1f'); g.addColorStop(1, '#b3200c');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(50,10,8,0.7)';
+    for (let i = 0; i < 3; i++) {
+      const a = b.seed + i * 2.1 + t * 3;
+      ctx.beginPath(); ctx.arc(b.x + Math.cos(a) * 6, b.y + Math.sin(a) * 6, 2.6, 0, TAU); ctx.fill();
+    }
+  }
+}
+function drawPickups() {
+  for (const p of pickups) {
+    const pulse = 0.5 + 0.5 * Math.sin(t * 6 + p.ph);
+    ctx.strokeStyle = `rgba(255,255,255,${0.25 + 0.3 * pulse})`; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 30 + pulse * 5, 0, TAU); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,244,230,0.6)'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(p.x, p.y + 25); ctx.quadraticCurveTo(p.x + 7, p.y + 40, p.x - 2, p.y + 54); ctx.stroke();
+    drawBalloon(p.x, p.y, p.color);
+  }
+}
+function drawParts() {
+  for (let pass = 0; pass < 2; pass++) {
+    ctx.globalCompositeOperation = pass ? 'lighter' : 'source-over';
+    for (const p of parts) {
+      if (p.add !== !!pass) continue;
+      const a = p.life / p.max;
+      ctx.globalAlpha = a;
+      if (p.ring) {
+        ctx.strokeStyle = p.color; ctx.lineWidth = 3 * a + 0.5;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.size + (1 - a) * 46, 0, TAU); ctx.stroke();
+      } else {
+        ctx.fillStyle = p.color;
+        const s = p.size * (0.4 + 0.6 * a);
+        ctx.fillRect(p.x - s, p.y - s, s * 2, s * 2);
+      }
+    }
+  }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+}
+function drawTexts() {
+  ctx.textAlign = 'center';
+  for (const x of texts) {
+    ctx.globalAlpha = clamp(x.life / x.max * 2, 0, 1);
+    ctx.font = `800 italic ${x.size}px ${FONT}`;
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(20,8,20,0.75)'; ctx.strokeText(x.text, x.x, x.y);
+    ctx.fillStyle = x.color; ctx.fillText(x.text, x.x, x.y);
+  }
+  ctx.globalAlpha = 1;
+}
+function drawWarnings() {
+  for (const b of birds) {
+    if (b.x <= W + 20) continue;
+    const a = 0.55 + 0.45 * Math.sin(t * 26);
+    ctx.fillStyle = `rgba(255,179,71,${a})`;
+    ctx.beginPath(); ctx.moveTo(W - 34, b.y); ctx.lineTo(W - 12, b.y - 13); ctx.lineTo(W - 12, b.y + 13); ctx.closePath(); ctx.fill();
+  }
+}
+function drawSpeedLines() {
+  const k = clamp((speed - 520) / 420, 0, 1);
+  if (state !== 'play' || k <= 0) return;
+  ctx.strokeStyle = '#ffe9d6'; ctx.lineWidth = 1.5;
+  for (let i = 0; i < 16; i++) {
+    const span = W + 400;
+    let x = (hash(i * 9.7) * span - scrollX * (1.6 + hash(i) * 0.9)) % span; if (x < 0) x += span;
+    const y = hash(i * 4.3) * (lavaY - 40) + 10, len = 60 + hash(i * 2.2) * 120;
+    ctx.globalAlpha = k * (0.06 + 0.1 * hash(i * 6.1));
+    ctx.beginPath(); ctx.moveTo(x - 200, y); ctx.lineTo(x - 200 + len, y); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+function drawHud() {
+  if (state !== 'play' && state !== 'dead') return;
+  const n = balloons.length;
+  for (let i = 0; i < MAX_B; i++) {
+    const x = 36 + i * 25, y = 36;
+    if (i < n) drawBalloon(x, y, balloons[i].color, 0.55);
+    else { ctx.strokeStyle = 'rgba(255,244,230,0.28)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(x, y, 9, 11.5, 0, 0, TAU); ctx.stroke(); }
+  }
+  if (state === 'play' && n <= 2) {
+    ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 10);
+    ctx.font = `800 italic 19px ${FONT}`; ctx.textAlign = 'left';
+    ctx.fillStyle = n === 0 ? '#ff4d6d' : '#ffd23f';
+    ctx.fillText(n === 0 ? 'Falling. Grab a balloon.' : 'Low lift', 26, 78);
+    ctx.globalAlpha = 1;
+  }
+}
+
+function render() {
+  ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
+  const thrusting = state === 'play' && (input.up || input.ptr);
+  drawSky();
+  ctx.save();
+  if (shake > 0) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+  drawFar(); drawRidge(); drawLavaGlow();
+  drawSpires(); drawGeysers(); drawLava(); drawClouds();
+  drawPickups(); drawBombs(); drawBirds();
+  for (const b of loose) {
+    ctx.strokeStyle = 'rgba(255,244,230,0.6)'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(b.x, b.y + 25); ctx.quadraticCurveTo(b.x + 8, b.y + 50, b.x - 3, b.y + 78); ctx.stroke();
+    drawBalloon(b.x, b.y, b.color);
+  }
+  if (!house.dead) { drawStrings(); for (const b of balloons) drawBalloon(b.x, b.y, b.color); drawHouse(thrusting); }
+  drawParts(); drawTexts(); drawWarnings();
+  ctx.restore();
+  drawSpeedLines(); drawHud();
+  const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.45, W / 2, H / 2, Math.max(W, H) * 0.75);
+  vg.addColorStop(0, 'rgba(8,3,10,0)'); vg.addColorStop(1, 'rgba(8,3,10,0.5)');
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  if (flash > 0) { ctx.fillStyle = `rgba(255,214,160,${flash * 0.5})`; ctx.fillRect(0, 0, W, H); }
+
+  const score = Math.floor(dist) + bonus;
+  if (score !== render.lastScore) { render.lastScore = score; $('dist').textContent = score.toLocaleString('en-US'); }
+  const shownBest = Math.max(best, score);
+  if (shownBest !== render.lastBest) { render.lastBest = shownBest; $('best').textContent = shownBest.toLocaleString('en-US'); }
+}
+
+// ---------- input ----------
+function setPaused(p) {
+  if (state !== 'play') return;
+  paused = p; $('paused').hidden = !p;
+  if (p) Sfx.thrust(false);
+}
+function tryStart() {
+  if (state === 'title' || (state === 'over' && overT > 0.45)) { start(); return true; }
+  return false;
+}
+window.addEventListener('keydown', e => {
+  const c = e.code;
+  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(c)) e.preventDefault();
+  if (e.repeat) return;
+  if (c === 'KeyM') { muted = !muted; Sfx.setMuted(muted); return; }
+  if (c === 'KeyP' || c === 'Escape') { setPaused(!paused); return; }
+  if ((c === 'Space' || c === 'Enter') && tryStart()) { if (c === 'Space') input.up = true; return; }
+  if (c === 'Space' || c === 'ArrowUp' || c === 'KeyW') input.up = true;
+  else if (c === 'ArrowDown' || c === 'KeyS') input.down = true;
+  else if (c === 'ArrowLeft' || c === 'KeyA') input.left = 1;
+  else if (c === 'ArrowRight' || c === 'KeyD') input.right = 1;
+});
+window.addEventListener('keyup', e => {
+  const c = e.code;
+  if (c === 'Space' || c === 'ArrowUp' || c === 'KeyW') input.up = false;
+  else if (c === 'ArrowDown' || c === 'KeyS') input.down = false;
+  else if (c === 'ArrowLeft' || c === 'KeyA') input.left = 0;
+  else if (c === 'ArrowRight' || c === 'KeyD') input.right = 0;
+});
+cv.addEventListener('pointerdown', e => { e.preventDefault(); if (paused) { setPaused(false); return; } input.ptr = true; });
+window.addEventListener('pointerup', () => { input.ptr = false; });
+window.addEventListener('pointercancel', () => { input.ptr = false; });
+cv.addEventListener('contextmenu', e => e.preventDefault());
+$('playBtn').addEventListener('click', () => tryStart());
+$('againBtn').addEventListener('click', () => { if (state === 'over') start(); });
+$('paused').addEventListener('pointerdown', () => setPaused(false));
+window.addEventListener('blur', () => { if (MANUAL) return; input.up = input.down = input.ptr = false; input.left = input.right = 0; setPaused(true); });
+
+// ---------- loop ----------
+let last = performance.now();
+function frame(now) {
+  let dt = Math.min(0.033, (now - last) / 1000); last = now;
+  if (!paused && !MANUAL) tick(dt);
+  render();
+  if (!MANUAL) requestAnimationFrame(frame);
+}
+function tick(dt) {
+  if (hitstop > 0) { hitstop -= dt; dt *= 0.15; }
+  update(dt);
+}
+$('best').textContent = best.toLocaleString('en-US');
+requestAnimationFrame(frame);
+
+// Small hook for automated checks.
+window.__cinderloft = {
+  get snapshot() {
+    return { state, paused, balloons: balloons.length, dist: Math.floor(dist), bonus, speed: Math.round(speed), y: Math.round(house.y), playT: +playT.toFixed(2),
+      counts: { spires: spires.length, geysers: geysers.length, clouds: clouds.length, birds: birds.length, bombs: bombs.length, pickups: pickups.length, parts: parts.length } };
+  },
+  step(seconds, dt) { dt = dt || 1 / 60; for (let s = 0; s < seconds - 1e-9; s += dt) tick(dt); render(); },
+  get world() { return { W, H, lavaY, speed, scrollX, playT, house, balloons, spires, geysers, clouds, birds, bombs, pickups, geyserHeight }; },
+  start,
+  pop() { if (balloons.length) popBalloon(balloons.length - 1); },
+  input
+};
+})();
+</script>
+</body>
+</html>
