@@ -125,7 +125,7 @@ let t = 0, playT = 0, speed = 320, scrollX = 0, dist = 0, bonus = 0;
 let best = 0;
 try { best = +localStorage.getItem('cinderloft.best') || 0; } catch (e) {}
 const house = { x: 0, y: 0, vx: 0, vy: 0, tilt: 0, inv: 0, dead: false };
-let balloons = [], loose = [], spires = [], geysers = [], clouds = [], bombs = [], birds = [], pickups = [], parts = [], texts = [];
+let balloons = [], loose = [], spires = [], geysers = [], clouds = [], bombs = [], warns = [], birds = [], pickups = [], parts = [], texts = [];
 let shake = 0, hitstop = 0, flash = 0, popGuard = 0, overT = 0, colorSeq = 0;
 let nextGround = 0, capNext = 0, birdT = 0, bombT = 0, pickT = 0, emberAcc = 0, deathCause = 'lava';
 const input = { up: false, down: false, left: 0, right: 0, ptr: false };
@@ -150,10 +150,10 @@ function addBalloon(fromX, fromY) {
 
 function reset() {
   house.x = W * 0.26; house.y = H * 0.44; house.vx = 0; house.vy = 0; house.tilt = 0; house.inv = 0; house.dead = false;
-  balloons = []; loose = []; spires = []; geysers = []; clouds = []; bombs = []; birds = []; pickups = []; texts = [];
+  balloons = []; loose = []; spires = []; geysers = []; clouds = []; bombs = []; warns = []; birds = []; pickups = []; texts = [];
   for (let i = 0; i < START_B; i++) addBalloon();
   playT = 0; speed = 480; dist = 0; bonus = 0; popGuard = 0; shake = 0; flash = 0; overT = 0;
-  nextGround = scrollX + 1000; capNext = 0; birdT = 3.4; bombT = 5; pickT = 8;
+  nextGround = scrollX + 1000; capNext = 0; birdT = 3.4; bombT = 7; pickT = 8;
 }
 
 function start() {
@@ -312,13 +312,18 @@ function spawnBird(d) {
   const cy = house.y - 50 - clusterTop(balloons.length) * 0.55;
   birds.push({ x: W + 50 + v * 0.55, by: clamp(cy + rand(-120, 120), 50, lavaY - 130), y: 0, v, ph: rand(0, TAU), minD: 1e9, scored: false });
 }
+// Lava blobs bubble on the surface for WARN_T seconds before they launch,
+// then lob up on a slow arc so there is time to read and dodge them.
+const WARN_T = 0.75, BOMB_G = 720;
 function spawnBomb() {
-  const gb = 1150;
-  const apex = clamp(house.y - 110 + rand(-170, 150), 60, lavaY - 160);
-  const vy = -Math.sqrt(2 * gb * (lavaY - apex)), ta = -vy / gb, vx = -speed * 0.55;
-  const x0 = house.x + rand(-30, 190) - vx * ta;
-  bombs.push({ x: x0, y: lavaY + 6, vx, vy, gb, r: 13, minD: 1e9, scored: false, seed: Math.random() * 10 });
-  if (x0 < W + 60) { fireBurst(x0, lavaY, 12, 320); Sfx.thump(); }
+  const apex = clamp(house.y - 110 + rand(-200, 170), 60, lavaY - 160);
+  const vy = -Math.sqrt(2 * BOMB_G * (lavaY - apex)), ta = -vy / BOMB_G, vx = -speed * 0.45;
+  const x0 = house.x + rand(-20, 260) - vx * ta;
+  warns.push({ x: x0 + speed * WARN_T, t: WARN_T, vx, vy });
+}
+function launchBomb(w) {
+  bombs.push({ x: w.x, y: lavaY + 6, vx: w.vx, vy: w.vy, gb: BOMB_G, r: 13, minD: 1e9, scored: false, seed: Math.random() * 10 });
+  if (w.x < W + 60) { fireBurst(w.x, lavaY, 12, 320); Sfx.thump(); }
 }
 function spawnPickup() {
   const n = balloons.length;
@@ -383,7 +388,7 @@ function update(dt) {
     // spawns
     if (scrollX >= nextGround) spawnGround(d);
     birdT -= dt; if (birdT <= 0) { spawnBird(d); birdT = lerp(3.0, 0.95, d) * rand(0.7, 1.3); }
-    bombT -= dt; if (bombT <= 0) { spawnBomb(); bombT = lerp(3.8, 1.15, d) * rand(0.7, 1.3); }
+    bombT -= dt; if (bombT <= 0) { spawnBomb(); bombT = lerp(5.5, 2.6, d) * rand(0.8, 1.25); }
     pickT -= dt; if (pickT <= 0) { spawnPickup(); pickT = pickDelay(n); }
   }
 
@@ -429,6 +434,12 @@ function update(dt) {
     b.x -= b.v * dt; b.y = b.by + Math.sin(t * 5 + b.ph) * 16;
     if (b.x < W + 20 && Math.random() < dt * 40) spark(b.x + 12, b.y + rand(-4, 4), rand(20, 90), rand(-30, 30), rand(0.15, 0.35), rand(1.5, 3.5), '#ff8a2a');
   }
+  for (const w of warns) {
+    w.x -= speed * dt; w.t -= dt;
+    if (w.x < W + 20 && Math.random() < dt * 26) spark(w.x + rand(-16, 16), lavaY - 4, rand(-30, 30) - speed * 0.3, rand(-160, -60), rand(0.2, 0.4), rand(2, 3.5), Math.random() < 0.5 ? '#ffd866' : '#ff7a1f', 600);
+    if (w.t <= 0) { w.done = true; if (state === 'play') launchBomb(w); }
+  }
+  warns = warns.filter(w => !w.done);
   for (const b of bombs) {
     b.vy += b.gb * dt; b.x += b.vx * dt; b.y += b.vy * dt;
     if (Math.random() < dt * 70) spark(b.x + rand(-5, 5), b.y + rand(-5, 5), rand(-30, 30), rand(-30, 30), rand(0.2, 0.45), rand(3, 6), Math.random() < 0.5 ? '#ffb347' : '#ff5a1f');
@@ -517,14 +528,14 @@ function collide() {
       if (Math.hypot(o.x - b.x, o.y - b.y) < BR + 11) { o.gone = true; o.hit = true; fireBurst(o.x, o.y, 10, 240); return popBalloon(i); }
     }
     for (const o of bombs) {
-      if (Math.hypot(o.x - b.x, o.y - b.y) < BR + o.r - 2) { o.gone = true; o.hit = true; fireBurst(o.x, o.y, 14, 300); return popBalloon(i); }
+      if (Math.hypot(o.x - b.x, o.y - b.y) < BR + o.r - 6) { o.gone = true; o.hit = true; fireBurst(o.x, o.y, 14, 300); return popBalloon(i); }
     }
   }
 
   // flying things that hit the house knock a balloon loose
   if (house.inv <= 0) {
     for (const list of [birds, bombs]) for (const o of list) {
-      if (!o.gone && circRect(o.x, o.y, (o.r || 12) - 2, hl, ht, hr, hb)) {
+      if (!o.gone && circRect(o.x, o.y, (o.r || 12) - (list === bombs ? 5 : 2), hl, ht, hr, hb)) {
         o.gone = true; o.hit = true; fireBurst(o.x, o.y, 14, 300);
         house.inv = 0.8; house.vy += 260; shake = Math.max(shake, 12);
         if (balloons.length) popBalloon(0); else Sfx.thump();
@@ -818,6 +829,15 @@ function drawBirds() {
   }
 }
 function drawBombs() {
+  ctx.globalCompositeOperation = 'lighter';
+  for (const w of warns) {
+    const k = 1 - w.t / WARN_T, pulse = 0.6 + 0.4 * Math.sin(t * 22);
+    const r = 18 + 22 * k;
+    const gl = ctx.createRadialGradient(w.x, lavaY, 2, w.x, lavaY, r);
+    gl.addColorStop(0, `rgba(255,230,140,${(0.35 + 0.5 * k) * pulse})`); gl.addColorStop(1, 'rgba(255,110,30,0)');
+    ctx.fillStyle = gl; ctx.beginPath(); ctx.ellipse(w.x, lavaY, r * 1.4, r * 0.55, 0, 0, TAU); ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
   for (const b of bombs) {
     ctx.globalCompositeOperation = 'lighter';
     const gl = ctx.createRadialGradient(b.x, b.y, 2, b.x, b.y, 40);
@@ -1000,7 +1020,7 @@ window.__cinderloft = {
       counts: { spires: spires.length, geysers: geysers.length, clouds: clouds.length, birds: birds.length, bombs: bombs.length, pickups: pickups.length, parts: parts.length } };
   },
   step(seconds, dt) { dt = dt || 1 / 60; for (let s = 0; s < seconds - 1e-9; s += dt) tick(dt); render(); },
-  get world() { return { W, H, lavaY, speed, scrollX, playT, house, balloons, spires, geysers, clouds, birds, bombs, pickups, geyserHeight }; },
+  get world() { return { W, H, lavaY, speed, scrollX, playT, house, balloons, spires, geysers, clouds, birds, bombs, warns, pickups, geyserHeight }; },
   start,
   pop() { if (balloons.length) popBalloon(balloons.length - 1); },
   input
