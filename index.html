@@ -154,7 +154,7 @@ function reset() {
   balloons = []; loose = []; spires = []; geysers = []; clouds = []; bombs = []; warns = []; birds = []; pickups = []; boosts = []; shield = false; star = 0; texts = [];
   for (let i = 0; i < START_B; i++) addBalloon();
   playT = 0; speed = 480; dist = 0; bonus = 0; popGuard = 0; shake = 0; flash = 0; overT = 0;
-  nextGround = scrollX + 1000; capNext = 0; birdT = 3.4; bombT = 7; pickT = 8; boostT = 10;
+  nextGround = scrollX + 1000; capNext = 0; birdT = 3.4; bombT = 7; pickT = 8; boostT = 20;
 }
 
 function start() {
@@ -298,7 +298,7 @@ function crash(cause) {
     shake = 22; flash = Math.max(flash, 0.35); hitstop = 0.1;
   }
   fireBurst(house.x, house.y + 20, 30, 520);
-  house.inv = 1.6; popGuard = 1.2;
+  house.inv = 1.0; popGuard = 0.8;
   house.vy = Math.min(house.vy, cause === 'geyser' ? -1050 : -800);
   house.vx = -260;
 }
@@ -316,9 +316,9 @@ function hurt(i) {
 const BOOSTS = { shield: '#8fd8ff', star: '#ffd23f', bundle: '#ff7aa2' };
 function spawnBoost() {
   const n = balloons.length;
-  const pool = ['shield', 'shield', 'star', 'star', 'bundle'];
-  if (n <= 4) pool.push('bundle', 'bundle');
-  if (shield) pool.splice(pool.indexOf('shield'), 1), pool.splice(pool.indexOf('shield'), 1);
+  const pool = ['shield', 'shield', 'star', 'bundle'];
+  if (n <= 3) pool.push('bundle');
+  if (shield) while (pool.includes('shield')) pool.splice(pool.indexOf('shield'), 1);
   const kind = pool[Math.floor(Math.random() * pool.length)];
   const y = rand(120, lavaY - 230);
   boosts.push({ x: W + 60, by: y, y, ph: rand(0, TAU), kind });
@@ -344,12 +344,12 @@ function collect() {
       if (shield) { bonus += 200; addText(o.x, o.y - 34, '+200', '#ffd23f', 22); }
       else { shield = true; addText(o.x, o.y - 34, 'Shield', BOOSTS.shield, 24); }
     } else if (o.kind === 'star') {
-      star = 6; addText(o.x, o.y - 34, 'Unstoppable for 6s', BOOSTS.star, 24);
+      star = 4; addText(o.x, o.y - 34, 'Unstoppable for 4s', BOOSTS.star, 24);
     } else {
       let added = 0;
-      for (let k = 0; k < 3; k++) if (addBalloon(o.x + rand(-20, 20), o.y + rand(-20, 20))) added++;
+      for (let k = 0; k < 2; k++) if (addBalloon(o.x + rand(-20, 20), o.y + rand(-20, 20))) added++;
       if (added) addText(o.x, o.y - 34, `+${added} balloons`, BOOSTS.bundle, 24);
-      if (added < 3) { bonus += 150 * (3 - added); addText(o.x, o.y - 60, `+${150 * (3 - added)}`, '#ffd23f', 20); }
+      if (added < 2) { bonus += 150 * (2 - added); addText(o.x, o.y - 60, `+${150 * (2 - added)}`, '#ffd23f', 20); }
     }
   }
 }
@@ -392,7 +392,7 @@ function spawnBird(d) {
 }
 // Lava blobs bubble on the surface for WARN_T seconds before they launch,
 // then lob up on a slow arc so there is time to read and dodge them.
-const WARN_T = 0.75, BOMB_G = 720;
+const WARN_T = 0.6, BOMB_G = 850;
 function spawnBomb() {
   const apex = clamp(house.y - 110 + rand(-200, 170), 60, lavaY - 160);
   const vy = -Math.sqrt(2 * BOMB_G * (lavaY - apex)), ta = -vy / BOMB_G, vx = -speed * 0.45;
@@ -409,7 +409,7 @@ function spawnPickup() {
   pickups.push({ x: W + 50, by: y, y, ph: rand(0, TAU), color: COLORS[(colorSeq + pickups.length) % COLORS.length] });
 }
 function pickDelay(n) {
-  return n >= 7 ? rand(9, 13) : n >= 4 ? rand(5, 8) : n >= 2 ? rand(3, 4.5) : rand(1.5, 2.3);
+  return n >= 7 ? rand(10, 14) : n >= 4 ? rand(6, 9) : n >= 2 ? rand(4, 5.5) : rand(2.2, 3.2);
 }
 
 function circRect(cx, cy, r, x1, y1, x2, y2) {
@@ -467,9 +467,9 @@ function update(dt) {
     // spawns
     if (scrollX >= nextGround) spawnGround(d);
     birdT -= dt; if (birdT <= 0) { spawnBird(d); birdT = lerp(3.0, 0.95, d) * rand(0.7, 1.3); }
-    bombT -= dt; if (bombT <= 0) { spawnBomb(); bombT = lerp(5.5, 2.6, d) * rand(0.8, 1.25); }
+    bombT -= dt; if (bombT <= 0) { spawnBomb(); bombT = lerp(4.6, 1.9, d) * rand(0.8, 1.25); }
     pickT -= dt; if (pickT <= 0) { spawnPickup(); pickT = pickDelay(n); }
-    boostT -= dt; if (boostT <= 0) { spawnBoost(); boostT = rand(11, 16); }
+    boostT -= dt; if (boostT <= 0) { spawnBoost(); boostT = rand(24, 34); }
   }
 
   if (state === 'dead' || state === 'over') {
@@ -624,14 +624,14 @@ function collide() {
       if (Math.hypot(o.x - b.x, o.y - b.y) < BR + 11) { o.gone = true; o.hit = true; fireBurst(o.x, o.y, 10, 240); return hurt(i); }
     }
     for (const o of bombs) {
-      if (Math.hypot(o.x - b.x, o.y - b.y) < BR + o.r - 6) { o.gone = true; o.hit = true; fireBurst(o.x, o.y, 14, 300); return hurt(i); }
+      if (Math.hypot(o.x - b.x, o.y - b.y) < BR + o.r - 4) { o.gone = true; o.hit = true; fireBurst(o.x, o.y, 14, 300); return hurt(i); }
     }
   }
 
   // flying things that hit the house knock a balloon loose
   if (house.inv <= 0) {
     for (const list of [birds, bombs]) for (const o of list) {
-      if (!o.gone && circRect(o.x, o.y, (o.r || 12) - (list === bombs ? 5 : 2), hl, ht, hr, hb)) {
+      if (!o.gone && circRect(o.x, o.y, (o.r || 12) - (list === bombs ? 4 : 2), hl, ht, hr, hb)) {
         o.gone = true; o.hit = true; fireBurst(o.x, o.y, 14, 300);
         house.inv = 0.8; house.vy += 260; shake = Math.max(shake, 12);
         if (shield) breakShield(); else if (balloons.length) popBalloon(0); else Sfx.thump();
