@@ -113,10 +113,12 @@ const MAX_B = 9, START_B = 7;
 const G = 2300, THRUST = 2000, DIVE = 1600, DRAG = 3;
 // Lift by balloon count. With none, the jet alone cannot hold the house up.
 const LIFT = [0, 480, 850, 1130, 1330, 1500, 1610, 1700, 1770, 1830];
-const SLOTS = [[0, -100], [-34, -112], [34, -112], [-17, -142], [17, -142], [-52, -138], [52, -138], [0, -172], [-35, -168]];
+// Kept short and tight so the whole rig is a dodgeable size.
+const SLOTS = [[0, -60], [-29, -70], [29, -70], [-14, -95], [14, -95], [-44, -89], [44, -89], [0, -120], [-30, -116]];
+const PS = 0.8, BS = 0.85; // house and balloon draw scale
 const COLORS = ['#ff4d6d', '#ffd23f', '#3ddc97', '#4cc9f0', '#b388ff', '#f7f4ff'];
 const DARK = {}; COLORS.forEach(c => DARK[c] = shade(c, -0.45));
-const BR = 17; // balloon hit radius
+const BR = 13; // balloon hit radius
 
 // ---------- state ----------
 let state = 'title'; // title | play | dead | over
@@ -132,12 +134,12 @@ let nextGround = 0, capNext = 0, birdT = 0, bombT = 0, pickT = 0, emberAcc = 0, 
 const input = { up: false, down: false, left: 0, right: 0, ptr: false };
 
 function anchor() {
-  return { x: house.x + Math.sin(house.tilt) * 50, y: house.y - Math.cos(house.tilt) * 50 };
+  return { x: house.x + Math.sin(house.tilt) * 40, y: house.y - Math.cos(house.tilt) * 40 };
 }
 function clusterTop(n) {
   let m = 0;
   for (let i = 0; i < n; i++) m = Math.max(m, -SLOTS[i][1]);
-  return n ? m + 22 : 0;
+  return n ? m + 19 : 0;
 }
 function addBalloon(fromX, fromY) {
   if (balloons.length >= MAX_B) return false;
@@ -304,7 +306,7 @@ function crash(cause) {
 }
 function breakShield() {
   shield = false; Sfx.pop(); Sfx.near();
-  ring(house.x, house.y - 100, '#8fd8ff', 60); ring(house.x, house.y - 100, '#ffffff', 40);
+  ring(house.x, house.y - 70, '#8fd8ff', 50); ring(house.x, house.y - 70, '#ffffff', 34);
   addText(house.x, house.y - 90, 'Shield took the hit', '#8fd8ff', 22);
   shake = Math.max(shake, 10); house.inv = Math.max(house.inv, 1.0); popGuard = Math.max(popGuard, 1.0);
 }
@@ -386,7 +388,7 @@ function spawnGround(d) {
   nextGround = scrollX + gap;
 }
 function spawnBird(d) {
-  const v = 540 + 300 * d + rand(-40, 60);
+  const v = 480 + 260 * d + rand(-40, 60);
   const cy = house.y - 50 - clusterTop(balloons.length) * 0.55;
   birds.push({ x: W + 50 + v * 0.55, by: clamp(cy + rand(-120, 120), 50, lavaY - 130), y: 0, v, ph: rand(0, TAU), minD: 1e9, scored: false });
 }
@@ -462,7 +464,7 @@ function update(dt) {
     if (popGuard > 0) popGuard -= dt;
     if (star > 0) star -= dt;
     Sfx.thrust(thrusting);
-    if (thrusting && Math.random() < dt * 60) spark(house.x + rand(-5, 5), house.y + 44, rand(-40, 40) - speed * 0.2, rand(160, 320), rand(0.12, 0.26), rand(2, 4), '#8fd8ff');
+    if (thrusting && Math.random() < dt * 60) spark(house.x + rand(-5, 5), house.y + 36, rand(-40, 40) - speed * 0.2, rand(160, 320), rand(0.12, 0.26), rand(2, 4), '#8fd8ff');
 
     // spawns
     if (scrollX >= nextGround) spawnGround(d);
@@ -514,7 +516,7 @@ function update(dt) {
     o.x -= speed * 0.75 * dt; o.y = o.by + Math.sin(t * 2.6 + o.ph) * 16;
     if (o.x < W && Math.random() < dt * 14) spark(o.x + rand(-14, 14), o.y + rand(-14, 14), rand(-30, 30), rand(-40, 10), rand(0.3, 0.6), rand(1.5, 3), BOOSTS[o.kind], 0, true);
   }
-  if (star > 0 && state === 'play' && Math.random() < dt * 50) spark(house.x + rand(-34, 34), house.y + rand(-200, 20), -speed * 0.4 + rand(-40, 40), rand(-40, 40), rand(0.3, 0.6), rand(2, 4), Math.random() < 0.5 ? '#fff3b0' : '#ffd23f', 0, true);
+  if (star > 0 && state === 'play' && Math.random() < dt * 50) spark(house.x + rand(-34, 34), house.y + rand(-160, 16), -speed * 0.4 + rand(-40, 40), rand(-40, 40), rand(0.3, 0.6), rand(2, 4), Math.random() < 0.5 ? '#fff3b0' : '#ffd23f', 0, true);
   for (const b of birds) {
     b.x -= b.v * dt; b.y = b.by + Math.sin(t * 5 + b.ph) * 16;
     if (b.x < W + 20 && Math.random() < dt * 40) spark(b.x + 12, b.y + rand(-4, 4), rand(20, 90), rand(-30, 30), rand(0.15, 0.35), rand(1.5, 3.5), '#ff8a2a');
@@ -558,7 +560,7 @@ function update(dt) {
 }
 
 function collide() {
-  const hl = house.x - 30, hr = house.x + 30, ht = house.y - 40, hb = house.y + 24;
+  const hl = house.x - 24, hr = house.x + 24, ht = house.y - 32, hb = house.y + 19;
 
   // things that end the run
   if (hb > lavaY - 3) return die('lava');
@@ -587,7 +589,7 @@ function collide() {
   // track how close the flying things get, for close-call bonuses
   for (const list of [birds, bombs]) for (const o of list) {
     const r = o.r || 12;
-    let m = Math.hypot(o.x - house.x, o.y - (house.y - 8)) - r - 34;
+    let m = Math.hypot(o.x - house.x, o.y - (house.y - 6)) - r - 28;
     for (const b of balloons) m = Math.min(m, Math.hypot(o.x - b.x, o.y - b.y) - r - BR);
     if (m < o.minD) o.minD = m;
     if (!o.scored && o.x < house.x - 110) { o.scored = true; if (!o.hit && o.minD < 22) nearMiss(); }
@@ -618,10 +620,10 @@ function collide() {
     }
     for (const c of clouds) {
       const dx = (b.x - c.x) / (c.w / 2);
-      if (Math.abs(dx) < 0.95 && b.y - 15 < c.bottom - 8 - 24 * dx * dx) { ring(b.x, b.y - 14, '#ff8a2a', 10); return hurt(i); }
+      if (Math.abs(dx) < 0.95 && b.y - 13 < c.bottom - 8 - 24 * dx * dx) { ring(b.x, b.y - 14, '#ff8a2a', 10); return hurt(i); }
     }
     for (const o of birds) {
-      if (Math.hypot(o.x - b.x, o.y - b.y) < BR + 11) { o.gone = true; o.hit = true; fireBurst(o.x, o.y, 10, 240); return hurt(i); }
+      if (Math.hypot(o.x - b.x, o.y - b.y) < BR + 9) { o.gone = true; o.hit = true; fireBurst(o.x, o.y, 10, 240); return hurt(i); }
     }
     for (const o of bombs) {
       if (Math.hypot(o.x - b.x, o.y - b.y) < BR + o.r - 4) { o.gone = true; o.hit = true; fireBurst(o.x, o.y, 14, 300); return hurt(i); }
@@ -848,14 +850,14 @@ function drawStrings() {
   ctx.beginPath();
   for (const b of balloons) {
     ctx.moveTo(a.x, a.y);
-    ctx.quadraticCurveTo((a.x + b.x) / 2 + (b.x - a.x) * 0.15, (a.y + b.y + 25) / 2 + 10, b.x, b.y + 25);
+    ctx.quadraticCurveTo((a.x + b.x) / 2 + (b.x - a.x) * 0.15, (a.y + b.y + 21) / 2 + 6, b.x, b.y + 21);
   }
   ctx.stroke();
 }
 
 function drawHouse(thrusting) {
   if (house.inv > 0 && Math.floor(t * 20) % 2) return;
-  ctx.save(); ctx.translate(house.x, house.y); ctx.rotate(house.tilt);
+  ctx.save(); ctx.translate(house.x, house.y); ctx.rotate(house.tilt); ctx.scale(PS, PS);
   // lift jet
   if (thrusting) {
     const len = 34 + Math.random() * 18;
@@ -976,11 +978,11 @@ function drawBoosts() {
 }
 function drawAura() {
   if (house.dead || state !== 'play') return;
-  const cx = house.x, cy = house.y - 105;
+  const cx = house.x, cy = house.y - 70;
   if (star > 0) {
     const fade = star < 1.5 && Math.floor(t * 12) % 2 ? 0.35 : 1;
     ctx.globalCompositeOperation = 'lighter';
-    const g = ctx.createRadialGradient(cx, cy + 40, 20, cx, cy, 170);
+    const g = ctx.createRadialGradient(cx, cy + 30, 20, cx, cy, 140);
     g.addColorStop(0, `rgba(255,220,120,${0.45 * fade})`); g.addColorStop(1, 'rgba(255,160,40,0)');
     ctx.fillStyle = g; ctx.fillRect(cx - 170, cy - 170, 340, 340);
     ctx.globalCompositeOperation = 'source-over';
@@ -989,9 +991,9 @@ function drawAura() {
     const w = 1 + Math.sin(t * 4) * 0.02;
     ctx.globalCompositeOperation = 'lighter';
     ctx.fillStyle = 'rgba(120,200,255,0.08)'; ctx.strokeStyle = 'rgba(143,216,255,0.55)'; ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.ellipse(cx, cy, 98 * w, 150 / w, 0, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(cx, cy, 82 * w, 112 / w, 0, 0, TAU); ctx.fill(); ctx.stroke();
     ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.ellipse(cx, cy, 86 * w, 138 / w, 0, -2.5, -1.7); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(cx, cy, 72 * w, 101 / w, 0, -2.5, -1.7); ctx.stroke();
     ctx.globalCompositeOperation = 'source-over';
   }
 }
@@ -1079,10 +1081,10 @@ function render() {
   drawPickups(); drawBoosts(); drawBombs(); drawBirds();
   for (const b of loose) {
     ctx.strokeStyle = 'rgba(255,244,230,0.6)'; ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.moveTo(b.x, b.y + 25); ctx.quadraticCurveTo(b.x + 8, b.y + 50, b.x - 3, b.y + 78); ctx.stroke();
-    drawBalloon(b.x, b.y, b.color);
+    ctx.beginPath(); ctx.moveTo(b.x, b.y + 21); ctx.quadraticCurveTo(b.x + 7, b.y + 42, b.x - 3, b.y + 64); ctx.stroke();
+    drawBalloon(b.x, b.y, b.color, BS);
   }
-  if (!house.dead) { drawStrings(); for (const b of balloons) drawBalloon(b.x, b.y, b.color); drawHouse(thrusting); }
+  if (!house.dead) { drawStrings(); for (const b of balloons) drawBalloon(b.x, b.y, b.color, BS); drawHouse(thrusting); }
   drawAura();
   drawParts(); drawTexts(); drawWarnings();
   ctx.restore();
